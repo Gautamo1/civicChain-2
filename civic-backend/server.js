@@ -173,6 +173,15 @@ async function updateComplaintStatusOnChain(complaint) {
 
   try {
     console.log(`\n🔄 Updating on-chain status for complaint ${complaintId} -> ${complaint.status} (${statusEnum})`);
+    
+    // First, verify the complaint exists on-chain
+    try {
+      await contract.getComplaint(complaintId);
+    } catch (checkError) {
+      console.log(`⚠️  Complaint ${complaintId} not found on current contract (likely minted to old contract). Skipping status update.`);
+      return;
+    }
+    
     const tx = await contract.updateComplaintStatus(complaintId, statusEnum);
     console.log(`📤 Status tx sent: ${tx.hash}`);
     const receipt = await tx.wait();
