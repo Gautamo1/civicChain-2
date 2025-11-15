@@ -224,18 +224,36 @@ export default function AddComplaintScreen() {
       }
 
       // Reverse geocode to human-readable address using LocationIQ
-      let formattedAddress = `${lat}, ${lon}`;
-      try {
-        const reverseGeoUrl = `https://us1.locationiq.com/v1/reverse?key=${LOCATIONIQ_API_KEY}&lat=${lat}&lon=${lon}&format=json`;
-        const geoResponse = await fetch(reverseGeoUrl);
-        if (geoResponse.ok) {
-          const geoData = await geoResponse.json();
-          formattedAddress = geoData.display_name || formattedAddress;
-          setAddress(formattedAddress);
-        }
-      } catch (err) {
-        console.warn('Reverse geocoding failed:', err);
-      }
+// Around line 228-238, replace with this:
+
+// Reverse geocode to human-readable address using LocationIQ
+let formattedAddress = `${lat}, ${lon}`;
+try {
+  const reverseGeoUrl = `https://us1.locationiq.com/v1/reverse?key=${LOCATIONIQ_API_KEY}&lat=${lat}&lon=${lon}&format=json`;
+  console.log('🌍 Calling LocationIQ:', reverseGeoUrl);
+  
+  const geoResponse = await fetch(reverseGeoUrl);
+  console.log('📡 Response status:', geoResponse.status, geoResponse.ok);
+  
+  if (geoResponse.ok) {
+    const geoData = await geoResponse.json();
+    console.log('📍 LocationIQ data:', JSON.stringify(geoData, null, 2));
+    
+    if (geoData.display_name) {
+      formattedAddress = geoData.display_name;
+      setAddress(formattedAddress);
+      console.log('✅ Got address:', formattedAddress);
+    } else {
+      console.warn('⚠️ No display_name in response');
+    }
+  } else {
+    const errorData = await geoResponse.json();
+    console.error('❌ LocationIQ error:', errorData);
+  }
+} catch (err) {
+  console.error('💥 Reverse geocoding failed:', err);
+}
+console.log('🏷️ Final address being used:', formattedAddress);
 
   // 3. Read the local file as ArrayBuffer via fetch (no Blob usage)
   const res = await fetch(imageUri);
@@ -265,18 +283,19 @@ export default function AddComplaintScreen() {
         const publicUrl = (publicData && (publicData as any).publicUrl) || null;
 
       // 6. Prepare the data to be saved in the database
-      const complaintData: any = {
-        title,
-        description,
-        photo_url: publicUrl,
-        locationAB: address || `${lat}, ${lon}`,
-        location_address: address || `${lat}, ${lon}`,
-        municipal_id: String(municipalId),
-        latitude: Number(lat.toFixed(8)),
-        longitude: Number(lon.toFixed(8)),
-        created_by: email,
-        category_id: selectedCategory,
-      };
+     // Replace lines 276-283 with:
+const complaintData: any = {
+  title,
+  description,
+  photo_url: publicUrl,
+  locationAB: formattedAddress, // Use formattedAddress instead of address
+  location_address: formattedAddress, // Use formattedAddress here too
+  municipal_id: String(municipalId),
+  latitude: Number(lat.toFixed(8)),
+  longitude: Number(lon.toFixed(8)),
+  created_by: email,
+  category_id: selectedCategory,
+};
 
       // 7. Insert the new complaint record into the 'complaints' table
       const { error: insertError } = await supabase.from('complaints').insert(complaintData);
