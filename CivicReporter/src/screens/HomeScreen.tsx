@@ -1,18 +1,21 @@
 // src/screens/HomeScreen.tsx
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Link, useFocusEffect } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Linking,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View
 } from 'react-native';
+import { HomeFilters } from '../components/HomeFilters';
+import { HomeHeader } from '../components/HomeHeader';
 import { supabase } from '../lib/supabase';
 
 // Statuses match table values
@@ -45,6 +48,49 @@ const FilterPill = ({ label, isSelected, onPress }: FilterPillProps) => (
 );
 
 // ==============================
+// Search Bar Component (Memoized)
+// ==============================
+const SearchBar = React.memo(({ 
+  searchQuery, 
+  onSearchChange, 
+  isSearchFocused, 
+  onFilterToggle 
+}: {
+  searchQuery: string;
+  onSearchChange: (text: string) => void;
+  isSearchFocused: boolean;
+  onFilterToggle: () => void;
+}) => (
+  <View style={styles.searchContainer}>
+    <View style={styles.searchBar}>
+      <Ionicons name="search" size={20} color="#6c757d" style={styles.searchIcon} />
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search complaints..."
+        value={searchQuery}
+        onChangeText={onSearchChange}
+        placeholderTextColor="#adb5bd"
+      />
+      {searchQuery.length > 0 && (
+        <Pressable onPress={() => onSearchChange('')}>
+          <Ionicons name="close-circle" size={20} color="#6c757d" />
+        </Pressable>
+      )}
+      <Pressable 
+        onPress={onFilterToggle}
+        style={styles.filterToggleButton}
+      >
+        <Ionicons 
+          name={isSearchFocused ? "chevron-up" : "filter"} 
+          size={20} 
+          color="#6c757d" 
+        />
+      </Pressable>
+    </View>
+  </View>
+));
+
+// ==============================
 // Home Screen
 // ==============================
 
@@ -63,14 +109,46 @@ export default function HomeScreen() {
   // Status filter
   const [selectedStatus, setSelectedStatus] = useState('all');
 
+  // Category filter
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
   // Search
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [searchBarHeight, setSearchBarHeight] = useState(70);
+
+  // Debounce search query to prevent excessive re-renders
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Stats
   const [openCount, setOpenCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [resolvedCount, setResolvedCount] = useState(0);
   const [verifiedCount, setVerifiedCount] = useState(0);
+
+  // Fetch categories on mount
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const { data, error } = await supabase.from('categories').select('id').order('id', { ascending: true });
+        if (error) throw error;
+        const rows = (data ?? []).map((r: any) => ({ id: String(r.id), name: String(r.id) }));
+        setCategories([{ id: 'all', name: 'All' }, ...rows]);
+      } catch (e) {
+        console.error('Error fetching categories', e);
+      }
+    };
+    fetchCategories();
+  }, []);
 
   // Fetch user's city and email from auth metadata on mount
   useEffect(() => {
@@ -146,11 +224,12 @@ export default function HomeScreen() {
       // --- Fetch complaints list (ordered by votes descending) ---
       let query = supabase
         .from('complaints')
-        .select('id, title, description, location, status, votes, created_at, municipal_id, tx_hash')
+        .select('id, title, description, location, status, votes, created_at, municipal_id, tx_hash, category_id')
         .order('votes', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false });
 
   if (selectedStatus !== 'all') query = query.eq('status', selectedStatus);
+  if (selectedCategory !== 'all') query = query.eq('category_id', selectedCategory);
   if (userCityId) query = query.eq('municipal_id', userCityId);
 
       const { data, error } = await query;
@@ -176,7 +255,7 @@ export default function HomeScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userCityId, selectedStatus]);
+  }, [userCityId, selectedStatus, selectedCategory]);
 
   useEffect(() => {
     fetchComplaintsAndCounts();
@@ -258,68 +337,34 @@ export default function HomeScreen() {
     fetchComplaintsAndCounts();
   };
 
+  // Memoize filtered data to prevent re-renders
+  const filteredComplaints = useMemo(() => {
+    return complaints.filter(item => {
+      if (!debouncedSearch) return true;
+      const query = debouncedSearch.toLowerCase();
+      return item.title.toLowerCase().includes(query) || 
+             item.description.toLowerCase().includes(query);
+    });
+  }, [complaints, debouncedSearch]);
+
   // ==============================
-  // Header (filters + stats)
+  // Header (light - stats only)
   // ==============================
-  const ListHeader = () => {
+  const ListHeader = useCallback(() => {
     const totalDisplay = selectedStatus === 'all' ? totalCount : complaints.length;
     return (
-      <>
-        <Text style={styles.subtitle}>Make your city better</Text>
-
-        {/* Stats */}
-        <View style={styles.statsContainer}>
-          <Pressable
-            style={[styles.statCard, selectedStatus === 'pending' ? styles.statCardActive : null, { backgroundColor: '#ffebee' }]}
-            onPress={() => setSelectedStatus('pending')}
-          >
-            <Text style={[styles.statNumber, { color: '#d32f2f' }]}>{openCount}</Text>
-            <Text style={styles.statLabel}>OPEN</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.statCard, selectedStatus === 'resolved' ? styles.statCardActive : null, { backgroundColor: '#e8f5e9' }]}
-            onPress={() => setSelectedStatus('resolved')}
-          >
-            <Text style={[styles.statNumber, { color: '#388e3c' }]}>{resolvedCount}</Text>
-            <Text style={styles.statLabel}>RESOLVED</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.statCard, selectedStatus === 'verified' ? styles.statCardActive : null, { backgroundColor: '#f3e8ff' }]}
-            onPress={() => setSelectedStatus('verified')}
-          >
-            <Text style={[styles.statNumber, { color: '#6a1b9a' }]}>{verifiedCount}</Text>
-            <Text style={styles.statLabel}>VERIFIED</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.statCard, selectedStatus === 'all' ? styles.statCardActive : null, { backgroundColor: '#e3f2fd' }]}
-            onPress={() => setSelectedStatus('all')}
-          >
-            <Text style={[styles.statNumber, { color: '#1976d2' }]}>{totalDisplay}</Text>
-            <Text style={styles.statLabel}>TOTAL</Text>
-          </Pressable>
-        </View>
-
-        {/* Search Bar */}
-        <View style={styles.searchSection}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={20} color="#6c757d" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search complaints by title or description..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholderTextColor="#adb5bd"
-            />
-            {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={20} color="#6c757d" />
-              </Pressable>
-            )}
-          </View>
-        </View>
-      </>
+      <HomeHeader
+        subtitle="Make your city better"
+        openCount={openCount}
+        resolvedCount={resolvedCount}
+        verifiedCount={verifiedCount}
+        totalCount={totalCount}
+        selectedStatus={selectedStatus}
+        totalDisplay={totalDisplay}
+        onStatusPress={setSelectedStatus}
+      />
     );
-  };
+  }, [openCount, resolvedCount, verifiedCount, totalCount, selectedStatus, complaints.length]);
 
   // ==============================
   // Empty List
@@ -342,15 +387,68 @@ export default function HomeScreen() {
       {loading ? (
         <ActivityIndicator size="large" color="#2f95dc" style={{ flex: 1 }} />
       ) : (
-        <FlatList
-          data={complaints.filter(item => {
-            if (!searchQuery) return true;
-            const query = searchQuery.toLowerCase();
-            return item.title.toLowerCase().includes(query) || 
-                   item.description.toLowerCase().includes(query);
-          })}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={({ item }) => {
+        <>
+          <View style={styles.contentWrapper}>
+            {/* Search Bar - Fixed at top */}
+            <View 
+              style={styles.searchContainer}
+              onLayout={(event) => {
+                const { height } = event.nativeEvent.layout;
+                setSearchBarHeight(height);
+              }}
+            >
+              <View style={styles.searchBar}>
+              <Ionicons name="search" size={20} color="#6c757d" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search complaints..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor="#adb5bd"
+                editable={true}
+              />
+              {searchQuery.length > 0 && (
+                <Pressable onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={20} color="#6c757d" />
+                </Pressable>
+              )}
+              <Pressable 
+                onPress={() => setIsSearchFocused(!isSearchFocused)}
+                style={styles.filterToggleButton}
+              >
+                <Ionicons 
+                  name={isSearchFocused ? "chevron-up" : "filter"} 
+                  size={20} 
+                  color="#6c757d" 
+                />
+              </Pressable>
+              </View>
+            </View>
+
+            {/* FlatList with Stats Header */}
+            <FlatList
+            style={styles.flatList}
+            data={filteredComplaints}
+            keyExtractor={(item) => item.id.toString()}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            removeClippedSubviews={false}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={50}
+            ListHeaderComponent={ListHeader}
+            ListEmptyComponent={EmptyList}
+            contentContainerStyle={styles.flatListContainer}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            onScroll={() => {
+              if (isSearchFocused) {
+                setIsSearchFocused(false);
+                setShowStatusDropdown(false);
+                setShowCategoryDropdown(false);
+              }
+            }}
+            scrollEventThrottle={16}
+            renderItem={({ item }) => {
             const hasVoted = userVotedComplaints.has(item.id);
             return (
               <View style={styles.complaintCard}>
@@ -406,12 +504,48 @@ export default function HomeScreen() {
               </View>
             );
           }}
-          ListHeaderComponent={ListHeader}
-          ListEmptyComponent={EmptyList}
-          contentContainerStyle={styles.scrollContainer}
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-        />
+          />
+          </View>
+
+          {/* Filter Options - Full-screen modal overlay */}
+          {isSearchFocused && (
+            <Pressable 
+              style={styles.filterModalOverlay}
+              onPress={() => {
+                setIsSearchFocused(false);
+                setShowStatusDropdown(false);
+                setShowCategoryDropdown(false);
+              }}
+            >
+              <Pressable 
+                style={styles.filterModalContent}
+                onPress={(e) => e.stopPropagation()}
+              >
+                <View style={styles.filterHeader}>
+                  <Text style={styles.filterHeaderText}>Filters</Text>
+                  <Pressable onPress={() => {
+                    setIsSearchFocused(false);
+                    setShowStatusDropdown(false);
+                    setShowCategoryDropdown(false);
+                  }}>
+                    <Ionicons name="close" size={20} color="#6c757d" />
+                  </Pressable>
+                </View>
+                <HomeFilters
+                  selectedStatus={selectedStatus}
+                  selectedCategory={selectedCategory}
+                  showStatusDropdown={showStatusDropdown}
+                  showCategoryDropdown={showCategoryDropdown}
+                  categories={categories}
+                  onStatusChange={setSelectedStatus}
+                  onStatusDropdownToggle={setShowStatusDropdown}
+                  onCategoryChange={setSelectedCategory}
+                  onCategoryDropdownToggle={setShowCategoryDropdown}
+                />
+              </Pressable>
+            </Pressable>
+          )}
+        </>
       )}
 
       {/* Floating Action Buttons */}
@@ -438,8 +572,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
+  contentWrapper: {
+    flex: 1,
+  },
   scrollContainer: {
     padding: 16,
+    paddingBottom: 100,
+  },
+  flatList: {
+    flex: 1,
+  },
+  flatListContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 100,
   },
   subtitle: {
@@ -481,8 +626,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     fontWeight: '600',
   },
-  searchSection: {
-    marginBottom: 24,
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    backgroundColor: '#f8f9fa',
+    zIndex: 10,
   },
   searchBar: {
     flexDirection: 'row',
@@ -503,11 +652,124 @@ const styles = StyleSheet.create({
     color: '#343a40',
     paddingVertical: 4,
   },
-  pill: {
-    paddingVertical: 8,
+  filterToggleButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  filterModalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    zIndex: 1000,
+    paddingTop: 70,
     paddingHorizontal: 16,
-    borderRadius: 20,
-    marginRight: 8,
+  },
+  filterModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    marginTop: 8,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  filterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  filterHeaderText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#343a40',
+  },
+  filtersContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  filterColumn: {
+    flex: 1,
+    minHeight: 60,
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#495057',
+    marginBottom: 8,
+  },
+  statusDropdown: {
+    position: 'relative',
+    zIndex: 1,
+  },
+  categoryDropdown: {
+    position: 'relative',
+    zIndex: 2,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  dropdownButtonText: {
+    fontSize: 13,
+    color: '#343a40',
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    maxHeight: 250,
+    zIndex: 1000,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  dropdownOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f5',
+  },
+  dropdownOptionActive: {
+    backgroundColor: '#e7f3ff',
+  },
+  dropdownOptionText: {
+    fontSize: 13,
+    color: '#495057',
+  },
+  dropdownOptionTextActive: {
+    color: '#2f95dc',
+    fontWeight: '600',
+  },
+  pill: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
     borderWidth: 1,
   },
   pillActive: {
@@ -520,6 +782,7 @@ const styles = StyleSheet.create({
   },
   pillText: {
     fontWeight: '600',
+    fontSize: 12,
   },
   pillTextActive: {
     color: '#ffffff',
@@ -527,11 +790,6 @@ const styles = StyleSheet.create({
   pillTextInactive: {
     color: '#495057',
   },
-  dropdownToggle: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#e9ecef', backgroundColor: '#fff' },
-  dropdownToggleActive: { borderColor: '#2f95dc' },
-  dropdownToggleInactive: { borderColor: '#dee2e6' },
-  dropdownList: { marginTop: 8, borderRadius: 8, borderWidth: 1, borderColor: '#e9ecef', backgroundColor: '#fff' },
-  dropdownItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#f1f3f5' },
   emptyContainer: {
     marginTop: 60,
     alignItems: 'center',
