@@ -8,7 +8,6 @@ import {
   FlatList,
   Linking,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -224,7 +223,7 @@ export default function HomeScreen() {
       // --- Fetch complaints list (ordered by votes descending) ---
       let query = supabase
         .from('complaints')
-        .select('id, title, description, location, status, votes, created_at, municipal_id, tx_hash, category_id')
+        .select('id, title, description, location, location_address, status, votes, created_at, municipal_id, tx_hash, category_id')
         .order('votes', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false });
 
@@ -337,13 +336,16 @@ export default function HomeScreen() {
     fetchComplaintsAndCounts();
   };
 
-  // Memoize filtered data to prevent re-renders
+  // Memoize filtered data to prevent re-renders (already filtered by city, status, category in fetchComplaintsAndCounts)
   const filteredComplaints = useMemo(() => {
+    // complaints array is already filtered by city, status, and category from the database query
+    // We only need to apply the search filter here
     return complaints.filter(item => {
       if (!debouncedSearch) return true;
       const query = debouncedSearch.toLowerCase();
       return item.title.toLowerCase().includes(query) || 
-             item.description.toLowerCase().includes(query);
+             item.description.toLowerCase().includes(query) ||
+             (item.location_address && item.location_address.toLowerCase().includes(query));
     });
   }, [complaints, debouncedSearch]);
 
@@ -351,20 +353,25 @@ export default function HomeScreen() {
   // Header (light - stats only)
   // ==============================
   const ListHeader = useCallback(() => {
-    const totalDisplay = selectedStatus === 'all' ? totalCount : complaints.length;
+    // Calculate dynamic counts based on filtered results (category + search)
+    const dynamicOpenCount = filteredComplaints.filter(c => c.status === 'pending').length;
+    const dynamicResolvedCount = filteredComplaints.filter(c => c.status === 'resolved').length;
+    const dynamicVerifiedCount = filteredComplaints.filter(c => c.status === 'verified').length;
+    const dynamicTotalCount = filteredComplaints.length;
+
     return (
       <HomeHeader
         subtitle="Make your city better"
-        openCount={openCount}
-        resolvedCount={resolvedCount}
-        verifiedCount={verifiedCount}
-        totalCount={totalCount}
+        openCount={dynamicOpenCount}
+        resolvedCount={dynamicResolvedCount}
+        verifiedCount={dynamicVerifiedCount}
+        totalCount={dynamicTotalCount}
         selectedStatus={selectedStatus}
-        totalDisplay={totalDisplay}
+        totalDisplay={dynamicTotalCount}
         onStatusPress={setSelectedStatus}
       />
     );
-  }, [openCount, resolvedCount, verifiedCount, totalCount, selectedStatus, complaints.length]);
+  }, [filteredComplaints, selectedStatus]);
 
   // ==============================
   // Empty List
