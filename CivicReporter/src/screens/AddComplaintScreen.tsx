@@ -1,20 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  Button,
-  StyleSheet,
-  Alert,
-  Image,
-  ScrollView,
-  ActivityIndicator,
-  Platform,
-} from 'react-native';
-import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { supabase, COMPLAINTS_BUCKET } from '../lib/supabase';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Button,
+    Image,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View
+} from 'react-native';
+import { COMPLAINTS_BUCKET, LOCATIONIQ_API_KEY, supabase } from '../lib/supabase';
 
 // Helper to parse EXIF GPS into decimal lat/lon
 function parseRational(value: any): number {
@@ -224,15 +223,19 @@ export default function AddComplaintScreen() {
         }
       }
 
-      // Reverse geocode to human-readable address (best-effort)
+      // Reverse geocode to human-readable address using LocationIQ
+      let formattedAddress = `${lat}, ${lon}`;
       try {
-        const addrs = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
-        if (addrs && addrs.length > 0) {
-          const a = addrs[0];
-          const parts = [a.name, a.street, a.city, a.region, a.postalCode, a.country].filter(Boolean);
-          setAddress(parts.join(', '));
+        const reverseGeoUrl = `https://us1.locationiq.com/v1/reverse?key=${LOCATIONIQ_API_KEY}&lat=${lat}&lon=${lon}&format=json`;
+        const geoResponse = await fetch(reverseGeoUrl);
+        if (geoResponse.ok) {
+          const geoData = await geoResponse.json();
+          formattedAddress = geoData.display_name || formattedAddress;
+          setAddress(formattedAddress);
         }
-      } catch {}
+      } catch (err) {
+        console.warn('Reverse geocoding failed:', err);
+      }
 
   // 3. Read the local file as ArrayBuffer via fetch (no Blob usage)
   const res = await fetch(imageUri);
@@ -267,6 +270,7 @@ export default function AddComplaintScreen() {
         description,
         photo_url: publicUrl,
         locationAB: address || `${lat}, ${lon}`,
+        location_address: address || `${lat}, ${lon}`,
         municipal_id: String(municipalId),
         latitude: Number(lat.toFixed(8)),
         longitude: Number(lon.toFixed(8)),
