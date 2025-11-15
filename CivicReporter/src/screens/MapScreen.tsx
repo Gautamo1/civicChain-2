@@ -1,16 +1,16 @@
 import * as Location from "expo-location";
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Dimensions,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Dimensions,
+    Image,
+    Pressable,
+    StyleSheet,
+    Text,
+    View,
 } from "react-native";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
-import { useFocusEffect } from "expo-router";
 import { fetchHotspots, fetchHotspotsInBBox, Hotspot } from "../lib/map";
 import { supabase } from "../lib/supabase";
 
@@ -84,20 +84,22 @@ export default function MapScreen() {
   useEffect(() => {
     // reload when status filter changes
     // If map has region, fetch by bbox; otherwise fallback to full fetch
-    if (region) {
-      const bbox = {
-        min_lat: region.latitude - region.latitudeDelta / 2,
-        max_lat: region.latitude + region.latitudeDelta / 2,
-        min_lng: region.longitude - region.longitudeDelta / 2,
-        max_lng: region.longitude + region.longitudeDelta / 2,
-      };
-      fetchHotspotsInBBox(selectedStatus, bbox, userCityId || undefined).then((rows: Hotspot[]) =>
-        setHotspots(rows)
-      );
-    } else {
-      loadHotspots(selectedStatus);
-    }
-  }, [selectedStatus, userCityId]);
+    const reloadHotspots = async () => {
+      if (region) {
+        const bbox = {
+          min_lat: region.latitude - region.latitudeDelta / 2,
+          max_lat: region.latitude + region.latitudeDelta / 2,
+          min_lng: region.longitude - region.longitudeDelta / 2,
+          max_lng: region.longitude + region.longitudeDelta / 2,
+        };
+        const rows = await fetchHotspotsInBBox(selectedStatus, bbox, userCityId || undefined);
+        setHotspots(rows);
+      } else {
+        await loadHotspots(selectedStatus);
+      }
+    };
+    reloadHotspots();
+  }, [selectedStatus]);
 
   // Re-fetch user city when screen comes into focus (e.g., after city change)
   useFocusEffect(
@@ -107,17 +109,14 @@ export default function MapScreen() {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
             const cityId = session.user.user_metadata?.city_id || null;
-            if (cityId !== userCityId) {
-              // City has changed, update it and reload hotspots
-              setUserCityId(cityId);
-            }
+            setUserCityId(cityId);
           }
         } catch (e) {
           console.warn("Could not refresh user city id", e);
         }
       };
       refreshUserCity();
-    }, [userCityId])
+    }, [])
   );
 
   useEffect(() => {
@@ -151,7 +150,6 @@ export default function MapScreen() {
     if (regionTimeout.current) clearTimeout(regionTimeout.current);
     regionTimeout.current = setTimeout(async () => {
       try {
-        setLoading(true);
         const bbox = {
           min_lat: newRegion.latitude - newRegion.latitudeDelta / 2,
           max_lat: newRegion.latitude + newRegion.latitudeDelta / 2,
@@ -162,8 +160,6 @@ export default function MapScreen() {
         setHotspots(rows);
       } catch (err) {
         console.error("Error fetching bbox hotspots:", err);
-      } finally {
-        setLoading(false);
       }
     }, 400);
   }
@@ -205,7 +201,7 @@ export default function MapScreen() {
           ref={mapRef}
           provider={PROVIDER_GOOGLE}
           style={styles.map}
-          region={region}
+          initialRegion={region}
           showsUserLocation
           onRegionChangeComplete={handleRegionChangeComplete}
         >
