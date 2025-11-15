@@ -1,18 +1,18 @@
 // src/screens/HomeScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Link, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  FlatList,
   ActivityIndicator,
   Alert,
+  FlatList,
   Linking,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
 } from 'react-native';
-import { Link, useFocusEffect } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
 // Statuses match table values
@@ -62,6 +62,9 @@ export default function HomeScreen() {
 
   // Status filter
   const [selectedStatus, setSelectedStatus] = useState('all');
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Stats
   const [openCount, setOpenCount] = useState(0);
@@ -296,19 +299,23 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        {/* Status Filter */}
-        <View style={styles.filterSection}>
-          <Text style={styles.filterTitle}>Status</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {STATUSES.map((status) => (
-              <FilterPill
-                key={status}
-                label={status}
-                isSelected={selectedStatus === status}
-                onPress={() => setSelectedStatus(status)}
-              />
-            ))}
-          </ScrollView>
+        {/* Search Bar */}
+        <View style={styles.searchSection}>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={20} color="#6c757d" style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search complaints by title or description..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor="#adb5bd"
+            />
+            {searchQuery.length > 0 && (
+              <Pressable onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={20} color="#6c757d" />
+              </Pressable>
+            )}
+          </View>
         </View>
       </>
     );
@@ -336,7 +343,12 @@ export default function HomeScreen() {
         <ActivityIndicator size="large" color="#2f95dc" style={{ flex: 1 }} />
       ) : (
         <FlatList
-          data={complaints}
+          data={complaints.filter(item => {
+            if (!searchQuery) return true;
+            const query = searchQuery.toLowerCase();
+            return item.title.toLowerCase().includes(query) || 
+                   item.description.toLowerCase().includes(query);
+          })}
           keyExtractor={(item) => item.id.toString()}
           renderItem={({ item }) => {
             const hasVoted = userVotedComplaints.has(item.id);
@@ -469,14 +481,27 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     fontWeight: '600',
   },
-  filterSection: {
+  searchSection: {
     marginBottom: 24,
   },
-  filterTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
     color: '#343a40',
-    marginBottom: 12,
+    paddingVertical: 4,
   },
   pill: {
     paddingVertical: 8,
