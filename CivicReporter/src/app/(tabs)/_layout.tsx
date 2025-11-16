@@ -9,6 +9,7 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#2f95dc', // A nice blue color for the active tab
+        lazy: false, // Disable lazy loading - preload all tabs
         headerTitleStyle: {
           fontSize: 24,
           fontWeight: 'bold',

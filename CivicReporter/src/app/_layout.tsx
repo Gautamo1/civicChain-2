@@ -34,7 +34,7 @@ function RootLayoutNav() {
 
     // If the user is signed in and is currently on an auth screen, send them to home.
     if (session && onAuthScreen) {
-      router.replace('/home');
+      router.replace('/(tabs)/home');
     }
 
     // If the user is not signed in and is trying to access the tabs group,

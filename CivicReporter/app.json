@@ -23,6 +23,7 @@
       }
     },
     "android": {
+      "package": "com.civicreporter.app",
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -34,7 +35,14 @@
         "ACCESS_COARSE_LOCATION",
         "CAMERA",
         "READ_MEDIA_IMAGES"
-      ]
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBWak1GmJvHzfiRHKnE9_oHAzsuZtwEqrU"
+        }
+      },
+      "enableProguardInReleaseBuilds": true,
+      "enableHermes": true
     },
     "web": {
       "bundler": "metro",
@@ -46,6 +54,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "dfa5f94d-7ab3-46cb-b044-57ac2e593519"
+      }
     }
   }
 }

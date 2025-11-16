@@ -97,10 +97,12 @@ export default function HomeScreen() {
   const [complaints, setComplaints] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
 
   // User's city from auth metadata
   const [userCityId, setUserCityId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userDataLoaded, setUserDataLoaded] = useState(false);
 
   // Track which complaints user has voted on
   const [userVotedComplaints, setUserVotedComplaints] = useState<Set<number>>(new Set());
@@ -163,6 +165,8 @@ export default function HomeScreen() {
         }
       } catch (error) {
         console.error('Error fetching user city:', error);
+      } finally {
+        setUserDataLoaded(true);
       }
     };
     fetchUserCity();
@@ -253,12 +257,16 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setInitialLoad(false);
     }
-  }, [userCityId, selectedStatus, selectedCategory]);
+  }, [userCityId, selectedStatus, selectedCategory, userEmail]);
 
   useEffect(() => {
-    fetchComplaintsAndCounts();
-  }, [fetchComplaintsAndCounts]);
+    // Only fetch after user data has been loaded
+    if (userDataLoaded) {
+      fetchComplaintsAndCounts();
+    }
+  }, [fetchComplaintsAndCounts, userDataLoaded]);
 
   // Real-time subscription to complaints table for auto-refresh
   useEffect(() => {
